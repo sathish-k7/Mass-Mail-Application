@@ -3,10 +3,12 @@ import re
 import logging
 from typing import Optional, Dict
 
-# Import statements (assuming these are in separate modules)
+# Import statements for the new modules
 from database import add_user, get_user, check_password, get_email_stats
-from email_service import send_email
+from email_service import send_email, send_bulk_emails, schedule_email, generate_email_report
 from dashboard import display_dashboard
+from contact_manager import display_contacts
+from template_manager import display_templates
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,100 +17,22 @@ logger = logging.getLogger(__name__)
 def local_css() -> None:
     """
     Apply custom CSS to enhance Streamlit UI with improved styling and readability.
-    
-    Uses a more comprehensive and modern CSS approach for better user experience.
     """
     st.markdown("""
     <style>
-    /* Enhanced Global Styling */
-    .stApp {
-        background-color: #867365;
-        font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-
-    /* Improved Sidebar */
-    .css-1aumxhk {
-        background-color: #000000;
-        border-right: 1px solid #e1e4e8;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-
-    /* Refined Navigation */
-    .stRadio > div {
-        display: flex;
-        justify-content: center;
-        gap: 15px;
-    }
-
-    .stRadio > div > label {
-        background-color: #282828;
-        color: #00000;
-        padding: 10px 20px;
-        border-radius: 8px;
-        transition: all 0.3s ease;
-        border: 1px solid transparent;
-    }
-
-    .stRadio > div > label:hover {
-        background-color: #575757;
-        border-color: #4a90e2;
-    }
-
-    /* Enhanced Input Fields */
-    .stTextInput > div > div > input, 
-    .stTextArea > div > div > textarea {
-        border: 2px solid #ced4da;
-        border-radius: 6px;
-        padding: 12px;
-        transition: all 0.3s ease;
-    }
-
-    .stTextInput > div > div > input:focus, 
-    .stTextArea > div > div > textarea:focus {
-        border-color: #4a90e2;
-        box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.2);
-    }
-
-    /* Refined Buttons */
-    .stButton > button {
-        background-color: #4a90e2;
-        color: white;
-        border: none;
-        padding: 10px 25px;
-        border-radius: 6px;
-        font-weight: 600;
-        transition: all 0.3s ease;
-    }
-
-    .stButton > button:hover {
-        background-color: #414141;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-
-    /* Improved Messaging */
-    .success-message {
-        background-color: #e8f5e9;
-        color: #2e7d32;
-        border: 1px solid #a5d6a7;
-    }
-
-    .error-message {
-        background-color: #ffebee;
-        color: #d32f2f;
-        border: 1px solid #ef9a9a;
-    }
+    .stApp { background-color: #867365; font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .css-1aumxhk { background-color: #000000; border-right: 1px solid #e1e4e8; }
+    .stButton > button { background-color: #4a90e2; color: white; border-radius: 6px; font-weight: 600; }
+    .stButton > button:hover { background-color: #414141; }
+    .stTextInput > div > div > input:focus { border-color: #4a90e2; }
+    .success-message { background-color: #e8f5e9; color: #2e7d32; }
+    .error-message { background-color: #ffebee; color: #d32f2f; }
     </style>
     """, unsafe_allow_html=True)
 
 def is_valid_email(email: str) -> bool:
     """
-    Validate email format with a more robust regex pattern.
-    
-    Args:
-        email (str): Email address to validate
-    
-    Returns:
-        bool: True if email is valid, False otherwise
+    Validate email format using a regex.
     """
     email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return re.match(email_regex, email) is not None
@@ -116,12 +40,6 @@ def is_valid_email(email: str) -> bool:
 def validate_password(password: str) -> bool:
     """
     Validate password strength.
-    
-    Args:
-        password (str): Password to validate
-    
-    Returns:
-        bool: True if password meets criteria, False otherwise
     """
     return (
         len(password) >= 8 and 
@@ -158,7 +76,7 @@ def main() -> None:
         st.session_state.user_logged_in = False
 
     # Main application layout
-    col1, col2, col3 = st.columns([1,2,1])
+    col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
         st.title("Mass Mailing Application")
@@ -167,7 +85,7 @@ def main() -> None:
         # Navigation
         page = st.radio(
             "Navigate", 
-            ["Login", "Send Email", "Dashboard"], 
+            ["Login", "Send Email", "Dashboard", "Contacts", "Templates", "Analytics"], 
             horizontal=True
         )
 
@@ -183,20 +101,20 @@ def main() -> None:
 
                     if login_button:
                         if not username or not password:
-                            st.error("Please enter both username and password.", icon="🚨")
+                            st.error("Please enter both username and password.")
                         else:
                             try:
                                 user = get_user(username)
                                 if user and check_password(user['password'], password):
                                     st.session_state.user_logged_in = True
                                     st.session_state.username = username
-                                    st.success("Login Successful!", icon="✅")
+                                    st.success("Login Successful!")
                                     st.rerun()
                                 else:
-                                    st.error("Invalid username or password.", icon="🚨")
+                                    st.error("Invalid username or password.")
                             except Exception as e:
                                 logger.error(f"Login error: {e}")
-                                st.error("An unexpected error occurred.", icon="🚨")
+                                st.error("An unexpected error occurred.")
             
             elif choice == "Register":
                 with st.form("Registration Form"):
@@ -207,20 +125,20 @@ def main() -> None:
 
                     if register_button:
                         if not username or not password or not confirm_password:
-                            st.error("Please fill in all fields.", icon="⚠️")
+                            st.error("Please fill in all fields.")
                         elif not validate_password(password):
-                            st.error("Password must be at least 8 characters long and include uppercase, lowercase, and numbers.", icon="⚠️")
+                            st.error("Password must be at least 8 characters long and include uppercase, lowercase, and numbers.")
                         elif password != confirm_password:
-                            st.error("Passwords do not match.", icon="⚠️")
+                            st.error("Passwords do not match.")
                         else:
                             try:
                                 if add_user(username, password):
-                                    st.success("Registration Successful! You can now login.", icon="✅")
+                                    st.success("Registration Successful! You can now login.")
                                 else:
-                                    st.error("Registration failed. Username might already exist.", icon="🚨")
+                                    st.error("Registration failed. Username might already exist.")
                             except Exception as e:
                                 logger.error(f"Registration error: {e}")
-                                st.error("An unexpected error occurred during registration.", icon="🚨")
+                                st.error("An unexpected error occurred during registration.")
 
         # Email Sending Page
         elif page == "Send Email":
@@ -229,30 +147,33 @@ def main() -> None:
                 
                 with st.form("Email Form"):
                     sender = st.text_input('Your Email', placeholder="Your Gmail address")
-                    to = st.text_input('Recipient Email', placeholder="Recipient's email address")
+                    to = st.text_area('Recipients (comma-separated)', placeholder="Enter recipient emails")
                     subject = st.text_input('Email Subject', placeholder="Subject of your email")
                     body = st.text_area('Email Body', placeholder="Write your message here...")
-                    
                     send_button = st.form_submit_button("Send Email")
 
                     if send_button:
-                        # Comprehensive email validation
-                        if not is_valid_email(sender):
-                            st.error("Invalid sender email format.", icon="🚨")
-                        elif not is_valid_email(to):
-                            st.error("Invalid recipient email format.", icon="🚨")
-                        elif not all([sender, to, subject, body]):
-                            st.error("Please fill all fields.", icon="⚠️")
+                        recipients = [email.strip() for email in to.split(",")]
+                        if not sender or not recipients or not subject or not body:
+                            st.error("Please fill all fields.")
+                        elif not is_valid_email(sender):
+                            st.error("Invalid sender email format.")
+                        elif not all(is_valid_email(recipient) for recipient in recipients):
+                            st.error("One or more recipient emails are invalid.")
                         else:
-                            try:
-                                send_email(sender, to, subject, body)
-                                st.success("Email sent successfully!", icon="✅")
-                            except Exception as e:
-                                logger.error(f"Email sending error: {e}")
-                                st.error(f"Failed to send email: {str(e)}", icon="🚨")
+                            results = send_bulk_emails(sender, recipients, subject, body)
+                            st.success("Emails sent successfully!")
+                            st.write(results)
 
-                # Logout button
-                if st.sidebar.button('🚪 Logout', use_container_width=True):
+                # Email Scheduling
+                with st.expander("📅 Schedule an Email"):
+                    send_time = st.text_input("Send Time (YYYY-MM-DD HH:MM:SS)", placeholder="Enter the time to send")
+                    schedule_button = st.button("Schedule Email")
+                    if schedule_button and send_time:
+                        schedule_email(sender, recipients, subject, body, send_time)
+                        st.success("Email scheduled successfully!")
+
+                if st.sidebar.button('🚪 Logout'):
                     logout()
 
         # Dashboard Page
@@ -260,7 +181,30 @@ def main() -> None:
             if st.session_state.get('user_logged_in', False):
                 display_dashboard()
             else:
-                st.warning("Please login to view the dashboard.", icon="⚠️")
+                st.warning("Please login to view the dashboard.")
+
+        # Contacts Management Page
+        elif page == "Contacts":
+            if st.session_state.get('user_logged_in', False):
+                display_contacts()
+            else:
+                st.warning("Please login to manage contacts.")
+
+        # Templates Management Page
+        elif page == "Templates":
+            if st.session_state.get('user_logged_in', False):
+                display_templates()
+            else:
+                st.warning("Please login to manage templates.")
+
+        # Analytics Page
+        elif page == "Analytics":
+            if st.session_state.get('user_logged_in', False):
+                st.subheader("📊 Email Analytics")
+                report = generate_email_report()
+                st.json(report)
+            else:
+                st.warning("Please login to view analytics.")
 
 if __name__ == "__main__":
     main()
