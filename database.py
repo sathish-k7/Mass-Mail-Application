@@ -3,7 +3,9 @@ from mysql.connector import pooling
 import bcrypt
 import logging
 import re
-
+import os
+from dotenv import load_dotenv
+load_dotenv()
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, 
@@ -24,11 +26,11 @@ class DatabaseManager:
                 pool_size=5,
                 host="localhost",
                 user="root",
-                password="Sath2005@",  # Update with your actual password
+                password=os.getenv("DB_PASSWORD"),  # Update with your actual password
                 database="data"
             )
         except mysql.connector.Error as err:
-            if err.errno == 1049:  # ER_BAD_DB_ERROR
+            if (err.errno == 1049):  # ER_BAD_DB_ERROR
                 self._create_database()
                 self._init_connection_pool()
             else:
@@ -41,7 +43,7 @@ class DatabaseManager:
             connection = mysql.connector.connect(
                 host="localhost",
                 user="root",
-                password="Sath2005@"  # Update with your actual password
+                password=os.getenv("DB_PASSWORD")  # Update with your actual password
             )
             cursor = connection.cursor()
             cursor.execute("CREATE DATABASE IF NOT EXISTS data")
@@ -67,26 +69,48 @@ class DatabaseManager:
         if connection:
             try:
                 cursor = connection.cursor()
-                cursor.execute('''CREATE TABLE IF NOT EXISTS users (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    username VARCHAR(255) UNIQUE,
-                                    password VARCHAR(255),
-                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                                  )''')
-                cursor.execute('''CREATE TABLE IF NOT EXISTS email_stats (
-                                    id INT AUTO_INCREMENT PRIMARY KEY,
-                                    status VARCHAR(50),
-                                    count INT DEFAULT 0,
-                                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                                  )''')
+                # Users table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS users (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        username VARCHAR(255) UNIQUE,
+                        password VARCHAR(255),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                # Email stats table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS email_stats (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        status VARCHAR(50) UNIQUE,
+                        count INT DEFAULT 0,
+                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    )
+                ''')
+                
+                # Initialize default stats with better error handling
+                stats = ['sent', 'inbox', 'spam']
+                for stat in stats:
+                    try:
+                        # Check if stat exists
+                        cursor.execute('SELECT COUNT(*) FROM email_stats WHERE status = %s', (stat,))
+                        if cursor.fetchone()[0] == 0:
+                            # Insert only if not exists
+                            cursor.execute('''
+                                INSERT INTO email_stats (status, count) 
+                                VALUES (%s, 0)
+                            ''', (stat,))
+                    except mysql.connector.Error as stat_err:
+                        logger.warning(f"Stat {stat} already exists: {stat_err}")
+                        continue
+                        
                 connection.commit()
                 logger.info("Database tables initialized successfully.")
             except mysql.connector.Error as err:
                 logger.error(f"Error creating tables: {err}")
             finally:
-                if connection:
-                    cursor.close()
-                    connection.close()
+                cursor.close()
+                connection.close()
 
     def init_contacts_table(self):
         """Create the contacts table if it doesn't exist."""
@@ -125,7 +149,7 @@ class DatabaseManager:
                 logger.error(f"Error creating templates table: {err}")
             finally:
                 connection.close()
-
+    
     def validate_password(self, password):
         """
         Validate password complexity:
@@ -306,7 +330,39 @@ class DatabaseManager:
             finally:
                 connection.close()
 
-
+    def increment_stat(self, stat_name: str):
+        """Increment the count for a given statistic."""
+        connection = self._get_connection()
+        if connection:
+            try:
+                cursor = connection.cursor()
+                cursor.execute('''
+                    UPDATE email_stats SET count = count + 1 WHERE status = %s
+                ''', (stat_name,))
+                connection.commit()
+                logger.info(f"Incremented '{stat_name}' stat.")
+            except mysql.connector.Error as err:
+                logger.error(f"Error incrementing stat '{stat_name}': {err}")
+            finally:
+                cursor.close()
+                connection.close()
+    
+    def get_all_stats(self) -> dict[str, int]:
+        """Retrieve all email statistics."""
+        connection = self._get_connection()
+        stats = {}
+        if connection:
+            try:
+                cursor = connection.cursor()
+                cursor.execute("SELECT status, count FROM email_stats")
+                results = cursor.fetchall()
+                stats = {status: count for (status, count) in results}
+            except mysql.connector.Error as err:
+                logger.error(f"Error fetching email stats: {err}")
+            finally:
+                cursor.close()
+                connection.close()
+        return stats
 # Instantiate the DatabaseManager
 db_manager = DatabaseManager()
 
@@ -339,3 +395,12 @@ def add_template(name, content):
 
 def fetch_all_templates():
     return db_manager.fetch_all_templates()
+def get_all_stats():
+    return db_manager.get_all_stats()
+
+if __name__ == '__main__':
+    db_manager = DatabaseManager()
+    db_manager.init_db()
+    db_manager.init_contacts_table()
+    db_manager.init_templates_table()
+    logger.info("Database initialization complete.")

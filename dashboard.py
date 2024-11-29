@@ -1,32 +1,22 @@
 import streamlit as st
 import plotly.express as px
 import pandas as pd
-from database import get_email_stats
+from database import get_all_stats
 
 def display_dashboard():
-    st.title("📊 User Analytics Dashboard")
+    st.title("📊 Email Statistics Dashboard")
     
     # Fetch email statistics
-    email_stats = get_email_stats()
+    stats = get_all_stats()
     
-    # Sidebar for filters
-    st.sidebar.subheader("Filters")
-    filter_options = ["All", "Sent", "Delivered", "Inbox", "Spam"]
-    selected_filter = st.sidebar.radio("Filter Emails By Status", filter_options)
-    
-    # Prepare data for visualizations
-    if email_stats:
-        stats_df = pd.DataFrame.from_dict(
-            email_stats, 
-            orient='index', 
-            columns=['Count']
-        ).reset_index()
-        stats_df.columns = ['Status', 'Count']
+    if stats:
+        # Prepare data for visualizations
+        stats_df = pd.DataFrame(list(stats.items()), columns=['Status', 'Count'])
         
-        # Apply filter
-        if selected_filter != "All":
-            stats_df = stats_df[stats_df['Status'] == selected_filter]
-
+        # Display total counts
+        st.subheader("📈 Total Email Statistics")
+        st.write(stats_df.set_index('Status'))
+        
         # Pie Chart for Email Status Distribution
         st.subheader("📧 Email Status Distribution")
         fig_pie = px.pie(
@@ -36,19 +26,21 @@ def display_dashboard():
             hole=0.3,
             color_discrete_sequence=px.colors.qualitative.Pastel
         )
-        fig_pie.update_layout(title_x=0.5)
+        fig_pie.update_layout(title_text='Email Status Distribution', title_x=0.5)
         st.plotly_chart(fig_pie, use_container_width=True)
         
         # Bar Chart for Email Statistics
-        st.subheader("📊 Email Stats")
+        st.subheader("📊 Email Stats Overview")
         fig_bar = px.bar(
             stats_df, 
             x='Status', 
             y='Count',
             color='Status',
-            color_discrete_sequence=px.colors.qualitative.Pastel
+            color_discrete_sequence=px.colors.qualitative.Pastel,
+            text='Count'
         )
-        fig_bar.update_layout(title_x=0.5)
+        fig_bar.update_layout(title_text='Email Counts by Status', title_x=0.5)
+        fig_bar.update_traces(textposition='outside')
         st.plotly_chart(fig_bar, use_container_width=True)
     else:
         st.warning("No email statistics available.")

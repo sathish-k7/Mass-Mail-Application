@@ -2,22 +2,21 @@ import streamlit as st
 import re
 import logging
 from typing import Optional, Dict
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # Import statements for the new modules
-from database import add_user, get_user, check_password, get_email_stats
+from database import add_user, get_user, check_password, get_all_stats
 from email_service import send_email, send_bulk_emails, schedule_email, generate_email_report
 from dashboard import display_dashboard
 from contact_manager import display_contacts
 from template_manager import display_templates
-
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def local_css() -> None:
-    """
-    Apply custom CSS to enhance Streamlit UI with improved styling and readability.
-    """
     st.markdown("""
     <style>
     .stApp { background-color: #867365; font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
@@ -31,16 +30,11 @@ def local_css() -> None:
     """, unsafe_allow_html=True)
 
 def is_valid_email(email: str) -> bool:
-    """
-    Validate email format using a regex.
-    """
+    
     email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return re.match(email_regex, email) is not None
 
 def validate_password(password: str) -> bool:
-    """
-    Validate password strength.
-    """
     return (
         len(password) >= 8 and 
         any(char.isupper() for char in password) and 
@@ -49,9 +43,7 @@ def validate_password(password: str) -> bool:
     )
 
 def logout() -> None:
-    """
-    Securely logout the current user by clearing session state.
-    """
+
     try:
         for key in list(st.session_state.keys()):
             del st.session_state[key]
@@ -164,6 +156,8 @@ def main() -> None:
                             results = send_bulk_emails(sender, recipients, subject, body)
                             st.success("Emails sent successfully!")
                             st.write(results)
+            else:
+                st.warning("Please login to send emails.")
 
                 # Email Scheduling
                 with st.expander("📅 Schedule an Email"):
@@ -177,7 +171,7 @@ def main() -> None:
                     logout()
 
         # Dashboard Page
-        elif page == "Dashboard":
+        if page == "Dashboard":
             if st.session_state.get('user_logged_in', False):
                 display_dashboard()
             else:
@@ -208,3 +202,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

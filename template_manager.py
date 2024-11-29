@@ -31,7 +31,7 @@ def display_templates():
                     if st.button(f"❌ Delete Template {template_id}", key=f"delete_{template_id}"):
                         db_manager.delete_template(template_id)
                         st.success(f"Template {template_id} deleted successfully.")
-                        st.experimental_rerun()
+                        st.rerun()
     else:
         st.info("No templates available. Create one!")
 
@@ -48,7 +48,7 @@ def display_templates():
             else:
                 db_manager.add_template(template_name, template_content)
                 st.success("Template created successfully!")
-                st.experimental_rerun()
+                st.rerun()
 
 
 def edit_template(template_id, current_name, current_content):
@@ -67,7 +67,7 @@ def edit_template(template_id, current_name, current_content):
             else:
                 db_manager.update_template(template_id, updated_name, updated_content)
                 st.success("Template updated successfully!")
-                st.experimental_rerun()
+                st.rerun()
 
 
 # For standalone testing

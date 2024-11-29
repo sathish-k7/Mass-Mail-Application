@@ -38,7 +38,7 @@ def display_contacts():
             else:
                 db_manager.add_contact(name, email)
                 st.success(f"Contact {name} added successfully.")
-                st.experimental_rerun()
+                st.rerun()  # Refresh the app after adding a contact
 
     st.markdown("### Import Contacts")
     uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
@@ -48,7 +48,7 @@ def display_contacts():
             for _, row in data.iterrows():
                 db_manager.add_contact(row["Name"], row["Email"])
             st.success("Contacts imported successfully!")
-            st.experimental_rerun()
+            st.rerun()  # Refresh the app after importing contacts
         else:
             st.error("CSV must contain 'Name' and 'Email' columns.")
 
@@ -57,7 +57,7 @@ def display_contacts():
     if st.button("Delete Contact"):
         db_manager.delete_contact(contact_id)
         st.success("Contact deleted successfully.")
-        st.experimental_rerun()
+        st.rerun()  # Refresh the app after deleting a contact
 
 # Helper function to validate email format
 def validate_email(email: str) -> bool:

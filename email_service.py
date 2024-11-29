@@ -5,6 +5,7 @@ import logging
 from typing import Dict, List
 from apscheduler.schedulers.background import BackgroundScheduler
 from database import DatabaseManager
+import os
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -18,18 +19,6 @@ scheduler = BackgroundScheduler()
 scheduler.start()
 
 def send_email(sender: str, recipient: str, subject: str, body: str) -> Dict:
-    """
-    Send an email and simulate tracking the delivery status (inbox/spam).
-
-    Args:
-        sender (str): Email address of the sender.
-        recipient (str): Email address of the recipient.
-        subject (str): Subject of the email.
-        body (str): Body content of the email.
-
-    Returns:
-        dict: Simulated email send result, including delivery status.
-    """
     try:
         # Create message
         message = MIMEMultipart()
@@ -38,117 +27,93 @@ def send_email(sender: str, recipient: str, subject: str, body: str) -> Dict:
         message["Subject"] = subject
         message.attach(MIMEText(body, "plain"))
 
-        # Sending email via SMTP
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        # Gmail SMTP settings
+        smtp_server = "smtp.gmail.com"
+        port = 587
+        gmail_password = os.getenv('GMAIL_APP_PASSWORD')
+
+        # Create SMTP session
+        with smtplib.SMTP(smtp_server, port) as server:
             server.starttls()
-            server.login(sender, "jvmf pmas gekp xmes")  # Use an app-specific password
-            server.sendmail(sender, recipient, message.as_string())
+            server.login(sender, gmail_password)
+            
+            # Update sent count
+            db_manager.increment_stat('sent')
 
-        # Simulate email delivery status
-        delivery_status = "Inbox" if "gmail" in recipient else "Spam"
-
-        # Update delivery statistics in the database
-        db_manager.update_email_stats(delivery_status)
-        logger.info(f"Email sent to {recipient}, delivery status: {delivery_status}")
+            try:
+                server.send_message(message)
+                # If no exception, consider it delivered to inbox
+                db_manager.increment_stat('inbox')
+                delivery_status = "inbox"
+                logger.info(f"Email sent successfully to {recipient}")
+            except smtplib.SMTPResponseException as e:
+                db_manager.increment_stat('spam')
+                delivery_status = "spam"
+                logger.warning(f"Email to {recipient} may have landed in Spam. Error: {e}")
+                
         return {"status": "success", "delivery_status": delivery_status}
 
     except Exception as e:
         logger.error(f"Failed to send email: {str(e)}")
+        db_manager.increment_stat('spam')
         return {"status": "failed", "error_message": str(e)}
 
-# New: Send Bulk Emails
 def send_bulk_emails(sender: str, recipients: List[str], subject: str, body: str) -> List[Dict]:
-    """
-    Send emails in bulk.
-
-    Args:
-        sender (str): Email address of the sender.
-        recipients (list): List of email addresses of the recipients.
-        subject (str): Subject of the email.
-        body (str): Body content of the email.
-
-    Returns:
-        list: List of results for each recipient.
-    """
     results = []
     for recipient in recipients:
         result = send_email(sender, recipient, subject, body)
-        results.append(result)
+        results.append({"recipient": recipient, **result})
     return results
 
-# New: Schedule Emails
-def schedule_email(sender: str, recipients: List[str], subject: str, body: str, send_time: str) -> None:
-    """
-    Schedule an email to be sent at a specific time.
+def schedule_email(sender: str, recipient: str, subject: str, body: str, send_time: str) -> None:
+    scheduler.add_job(
+        send_email,
+        'date',
+        run_date=send_time,
+        args=[sender, recipient, subject, body]
+    )
+    logger.info(f"Email scheduled for {send_time}")
 
-    Args:
-        sender (str): Email address of the sender.
-        recipients (list): List of email addresses of the recipients.
-        subject (str): Subject of the email.
-        body (str): Body content of the email.
-        send_time (str): Time to send the email (format: 'YYYY-MM-DD HH:MM:SS').
-    """
-    def job():
-        send_bulk_emails(sender, recipients, subject, body)
-
-    scheduler.add_job(job, 'date', run_date=send_time)
-    logger.info(f"Email scheduled for {send_time} to {len(recipients)} recipients.")
-
-# New: Generate Email Report
 def generate_email_report() -> Dict:
-    """
-    Generate a report on email delivery analytics.
+    try:
+        # Get stats from database
+        stats = db_manager.get_all_stats()
+        
+        # Calculate metrics
+        total_emails = stats.get('sent', 0)
+        inbox_count = stats.get('inbox', 0)
+        spam_count = stats.get('spam', 0)
 
-    Returns:
-        dict: Email campaign statistics.
-    """
-    stats = db_manager.get_email_stats()
-    total_emails = sum(stats.values())
-    if total_emails == 0:
-        return {"total_emails": 0, "success_rate": 0, "spam_rate": 0}
+        # Calculate rates if emails were sent
+        if total_emails > 0:
+            success_rate = (inbox_count / total_emails) * 100
+            spam_rate = (spam_count / total_emails) * 100
+        else:
+            success_rate = spam_rate = 0.0
 
-    success_count = stats.get("Inbox", 0)
-    spam_count = stats.get("Spam", 0)
+        # Log simplified report
+        logger.info(f"Analytics Report - Total Sent: {total_emails}")
+        logger.info(f"Rates - Success: {success_rate:.1f}%, Spam: {spam_rate:.1f}%")
 
-    success_rate = (success_count / total_emails) * 100
-    spam_rate = (spam_count / total_emails) * 100
+        # Return only requested metrics
+        return {
+            "Total Emails Sent": total_emails,
+            "Success Rate": f"{success_rate:.1f}%",
+            "Spam Rate": f"{spam_rate:.1f}%"
+        }
+    except Exception as e:
+        logger.error(f"Error generating analytics report: {e}")
+        return {
+            "Total Emails Sent": 0,
+            "Success Rate": "0.0%",
+            "Spam Rate": "0.0%"
+        }
 
-    logger.info(f"Email Report: Total: {total_emails}, Success Rate: {success_rate}%, Spam Rate: {spam_rate}%")
-    return {
-        "total_emails": total_emails,
-        "success_rate": success_rate,
-        "spam_rate": spam_rate
-    }
-
-# For standalone testing
 if __name__ == "__main__":
-    # Example: Single email
     result = send_email(
         sender="your_email@gmail.com",
-        recipient="recipient_email@gmail.com",
+        recipient="test@example.com",
         subject="Test Email",
         body="This is a test email."
     )
     print(result)
-
-    # Example: Bulk email
-    bulk_result = send_bulk_emails(
-        sender="your_email@gmail.com",
-        recipients=["recipient1@gmail.com", "recipient2@gmail.com"],
-        subject="Bulk Test",
-        body="This is a bulk test email."
-    )
-    print(bulk_result)
-
-    # Example: Schedule email
-    schedule_email(
-        sender="your_email@gmail.com",
-        recipients=["recipient1@gmail.com", "recipient2@gmail.com"],
-        subject="Scheduled Email",
-        body="This email is scheduled to be sent later.",
-        send_time="2024-11-28 10:30:00"
-    )
-
-    # Example: Generate report
-    report = generate_email_report()
-    print(report)
